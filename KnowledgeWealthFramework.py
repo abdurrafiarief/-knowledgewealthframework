@@ -2,8 +2,15 @@
 import pandas as pd
 import math
 import time
+from tqdm import tqdm
+import requests
+import validators
+import glob
+import os
 
-
+from MultiClassObject import WealthKGMultiClassObject
+from SingleClassObject import WealthKGSingleClassObject
+from QueryBuilder import QueryBuilder
 
 class WealthKG:
     '''
@@ -11,7 +18,7 @@ class WealthKG:
 
     Attributes:
     - sparql_endpoint: string. Endpoint for SPARQL server
-    - prefixes: list of string. prefixes that might be needed for SPARQL endpoint.
+    - query_builder: QueryBuilder. Object for constructing queries
     '''
 
     def __init__(self, sparql_endpoint, prefixes = []):
@@ -19,294 +26,49 @@ class WealthKG:
             self.sparql_endpoint = sparql_endpoint
         else:
             raise Exception("URL not valid")
-        self.prefix_string = self.__construct_prefix_string(prefixes)
-    
+        
+        self.__query_builder = QueryBuilder(prefixes)
   
-    def single_class_query(self, class_filters, additional_filters=[], bag=True, limit=10000):
+    def single_class_query(self, class_filters, additional_filters=[], distinct=True, limit=10000):
         '''
         Function for querying entities within a class
 
         Inputs:
         - class_filters: string list. List with filters needed for the class
         - additional_filters: string list. List with any additional special filters. Default empty.
-        - bag: boolean. True for bag queries, false for set queries. Default True.
+        - distinct: boolean. True for distinct queries, false for set queries. Default True.
         - limit: int. Maximum ammount of entities to be queried. Default 10 thousand.
         
         Output:
         -WealthKGSingleClassObject: Object for the results of the query
         '''
 
-        filter_string = self.__construct_filter_string(class_filters)
+        filter_string = self.__query_builder.construct_filter_string(class_filters)
         out_filters = [x for x in additional_filters if "?p" in x] + [x for x in additional_filters if "?s" in x]
         in_filters = [x for x in additional_filters if "?i" in x] + [x for x in additional_filters if "?s" in x]
-        additional_filter_string_out = self.__construct_additional_filter_string(out_filters)
-        additional_filter_string_in = self.__construct_additional_filter_string(in_filters)
+        additional_filter_string_out = self.__query_builder.construct_additional_filter_string(out_filters)
+        additional_filter_string_in = self.__query_builder.construct_additional_filter_string(in_filters)
             
-            if limit <= 10000 or "dbpedia" in self.sparql_endpoint:
-                if bag:
-                query_string_outgoing = self.__construct_query_bag_outgoing(filter_string, additional_filter_string_out, limit)
-                query_string_incoming = self.__construct_query_bag_incoming(filter_string, additional_filter_string_in, limit)
+        if limit <= 10000 or "dbpedia" in self.sparql_endpoint:
+            query_string_outgoing = self.__query_builder.construct_query_outgoing(filter_string, additional_filter_string_out, limit, distinct)
+            query_string_incoming = self.__query_builder.construct_query_incoming(filter_string, additional_filter_string_in, limit, distinct)
 
-                df = self.__construct_df_outgoing_incoming(query_string_outgoing, query_string_incoming)
+            df = self.__construct_df_outgoing_incoming(query_string_outgoing, query_string_incoming)
 
-                return WealthKGSingleClassObject(df, bag, filter_string, len(df))
+            return WealthKGSingleClassObject(df, distinct, filter_string, len(df))
 
-                else:
-                query_string_outgoing = self.__construct_query_set_outgoing(filter_string, additional_filter_string_out, limit)
-                query_string_incoming = self.__construct_query_set_incoming(filter_string, additional_filter_string_in, limit)
 
-                df = self.__construct_df_outgoing_incoming(query_string_outgoing, query_string_incoming)
+        #If more than 10000 construct the query in a different way
+        else:
+            entity_additional_filter = [x for x in additional_filters if "?s" in x]
+            entity_additional_filter_string = self.__query_builder.construct_additional_filter_string(entity_additional_filter)
+            sample_query = self.__query_builder.construct_sample_entities_query(filter_string, entity_additional_filter_string, limit)
+            entities_list = self.__get_entities_list(sample_query)
 
-                return WealthKGSingleClassObject(df, bag, filter_string, len(df))
-            
-            #If more than 10000 construct the query in a different way
-            else:
-                entity_additional_filter = [x for x in additional_filters if "?s" in x]
-                entity_additional_filter_string = self.__construct_additional_filter_string(entity_additional_filter)
-                sample_query = self.__construct_sample_entities_query(filter_string, entity_additional_filter_string, limit)
-                entities_list = self.__get_entities_list(sample_query)
+            df = self.__construct_batch_df(filter_string, entities_list, additional_filters, distinct)
+            return WealthKGSingleClassObject(df, distinct, filter_string, len(df))
 
-                if bag:
-                    df = self.__construct_batch_bag_df(filter_string, entities_list, additional_filters)
-                    return WealthKGSingleClassObject(df, bag, filter_string, len(df))
-
-                else:
-                    df = self.__construct_batch_set_df(filter_string, entities_list, additional_filters)
-                    return WealthKGSingleClassObject(df, bag, filter_string, len(df))
   
-    def __construct_query_bag_outgoing(self, filter_string, additional_filter_string, limit):
-        '''
-        Helper function to construct query string for outgoing properties
-        Input:
-        -filter_sting: string, class filters for the query
-        -additional_filter_string: string, additional filters that may be needed
-        -limit: int, entity max limit
-
-        Output:
-        -query: string
-        '''
-
-
-        query = self.prefix_string + '''
-                SELECT ?s (COUNT(?p) AS ?pCount) {
-
-                  {SELECT ?s ?p 
-                  WHERE {
-              ''' + filter_string + \
-              '''
-                    ?s ?p ?o . # get triples with the following constraints
-                    '''+additional_filter_string+'''
-                  }}
-
-                } GROUP BY ?s LIMIT '''+ str(limit) +'''
-              '''
-        return query
-  
-    def __construct_query_set_outgoing(self, filter_string, additional_filter_string, limit):
-        '''
-        Helper function to construct query string for distinct outgoing properties
-        Input:
-        -filter_sting: string, class filters for the query
-        -additional_filter_string: string, additional filters that may be needed
-        -limit: int, entity max limit
-
-        Output:
-        -query: string
-        '''
-
-        query = self.prefix_string + '''
-                SELECT ?s (COUNT(?p) AS ?pCount) {
-
-                  {SELECT DISTINCT ?s ?p
-                  WHERE {
-              ''' + filter_string + \
-              '''
-                    ?s ?p ?o . # get 
-                     '''+additional_filter_string+'''
-                  }}
-
-                } GROUP BY ?s LIMIT '''+ str(limit) +'''
-              '''
-        return query
-
-    def __construct_query_bag_incoming(self, filter_string, additional_filter_string, limit):
-        '''
-        Helper function to construct query string for incoming properties
-        Input:
-        -filter_sting: string, class filters for the query
-        -additional_filter_string: string, additional filters that may be needed
-        -limit: int, entity max limit
-
-        Output:
-        -query: string
-        '''
-        query = self.prefix_string + '''
-                SELECT ?s (COUNT(?i) AS ?iCount) {
-
-                  {SELECT  ?s ?i
-                  WHERE {
-              ''' + filter_string + \
-              '''
-                    ?o ?i ?s . 
-                     '''+additional_filter_string+'''
-                  }}
-
-                } GROUP BY ?s LIMIT '''+ str(limit) +'''
-              '''
-        return query
-
-    def __construct_query_set_incoming(self, filter_string, additional_filter_string, limit):
-        '''
-        Helper function to construct query string for distinct incoming properties
-        Input:
-        -filter_sting: string, class filters for the query
-        -additional_filter_string: string, additional filters that may be needed
-        -limit: int, entity max limit
-
-        Output:
-        -query: string
-        '''
-        
-        query = self.prefix_string + '''
-                SELECT ?s (COUNT(?i) AS ?iCount) {
-
-                  {SELECT DISTINCT ?s ?i
-                  WHERE {
-              ''' + filter_string + \
-              '''
-                    ?o ?i ?s . 
-                     '''+additional_filter_string+'''
-                  }}
-
-                } GROUP BY ?s LIMIT '''+ str(limit) +'''
-              '''
-        return query
-
-    def __construct_batch_query_bag_outgoing(self, filter_string, values_list, additional_filter_string):
-        '''
-        Helper function to construct batch queries for outgoing properties
-        Input:
-        -filter_sting: string, class filters for the query
-        -additional_filter_string: string, additional filters that may be needed
-        -values_list: list of entity values, used for querying multiple entities at once
-
-        Output:
-        -query: string
-        '''
-        values = ""
-        for v in values_list:
-            values += " <{}> ".format(v)
-
-        query = self.prefix_string + '''
-                SELECT ?s (COUNT(?p) AS ?pCount) {
-
-                  {SELECT  ?s ?p
-                  WHERE {
-                  VALUES ?s {'''+values+'''}
-              ''' + filter_string + \
-              '''
-                    ?s ?p ?o . # get 
-                    '''+additional_filter_string+'''
-                  }}
-
-                } GROUP BY ?s 
-              '''
-        return query
-
-    def __construct_batch_query_bag_incoming(self, filter_string, values_list, additional_filter_string):
-        '''
-        Helper function to construct batch queries for incoming properties
-        Input:
-        -filter_sting: string, class filters for the query
-        -additional_filter_string: string, additional filters that may be needed
-        -values_list: list of entity values, used for querying multiple entities at once
-
-        Output:
-        -query: string
-        '''
-        values = ""
-        for v in values_list:
-            values += " <{}> ".format(v)
-
-        query = self.prefix_string + '''
-                SELECT ?s (COUNT(?i) AS ?iCount) {
-
-                  {SELECT  ?s ?i
-                  WHERE {
-                  VALUES ?s {'''+values+'''}
-              ''' + filter_string + \
-              '''
-                    ?o ?i ?s . # get 
-                    '''+additional_filter_string+'''
-                  }}
-
-                } GROUP BY ?s 
-              '''
-        return query
-
-    def __construct_batch_query_set_outgoing(self, filter_string, values_list, additional_filter_string):
-        '''
-        Helper function to construct batch queries for distinct outgoing properties
-        Input:
-        -filter_sting: string, class filters for the query
-        -additional_filter_string: string, additional filters that may be needed
-        -values_list: list of entity values, used for querying multiple entities at once
-
-        Output:
-        -query: string
-        '''
-
-        values = ""
-        for v in values_list:
-            values += " <{}> ".format(v)
-
-        query = self.prefix_string + '''
-                SELECT ?s (COUNT(?p) AS ?pCount) {
-
-                  {SELECT DISTINCT ?s ?p
-                  WHERE {
-                  VALUES ?s {'''+values+'''}
-              ''' + filter_string + \
-              '''
-                    ?s ?p ?o . # get 
-                    '''+additional_filter_string+'''
-                  }}
-
-                } GROUP BY ?s 
-              '''
-        return query
-
-    def __construct_batch_query_set_incoming(self, filter_string, values_list, additional_filter_string):
-        '''
-        Helper function to construct batch queries for distinct incoming properties
-        Input:
-        -filter_sting: string, class filters for the query
-        -additional_filter_string: string, additional filters that may be needed
-        -values_list: list of entity values, used for querying multiple entities at once
-
-        Output:
-        -query: string
-        '''
-
-        values = ""
-        for v in values_list:
-            values += " <{}> ".format(v)
-
-        query = self.prefix_string + '''
-                SELECT ?s (COUNT(?i) AS ?iCount) {
-
-                  {SELECT DISTINCT  ?s ?i
-                  WHERE {
-                  VALUES ?s {'''+values+'''}
-              ''' + filter_string + \
-              '''
-                    ?o ?i ?s . # get 
-                    '''+additional_filter_string+'''
-                  }}
-
-                } GROUP BY ?s 
-              '''
-        return query
   
     def __construct_df_outgoing_incoming(self, query_out, query_in):
         '''
@@ -386,13 +148,14 @@ class WealthKG:
 
         return resultdf.sort_values(by='totalCount', ascending=False).reset_index(drop=True)
 
-    def __construct_batch_bag_df(self, filter_string, values_list, additional_filters):
+    def __construct_batch_df(self, filter_string, values_list, additional_filters, distinct):
         '''
         Helper function to create dataframe from sample query
         Input:
         -filter_sting: string, class filters for the query
         -additional_filter_string: string, additional filters that may be needed
         -values_list: list of entity values, used for querying multiple entities at once
+        -distinct: boolean, true if for querying distinct properties
 
         Output:
         -df: pandas dataframe, dataframe for query results
@@ -406,8 +169,8 @@ class WealthKG:
 
         out_filters = [x for x in additional_filters if "?p" in x] + [x for x in additional_filters if "?s" in x]
         in_filters = [x for x in additional_filters if "?i" in x] + [x for x in additional_filters if "?s" in x]
-        additional_filter_string_out = self.__construct_additional_filter_string(out_filters)
-        additional_filter_string_in = self.__construct_additional_filter_string(in_filters)
+        additional_filter_string_out = self.__query_builder.construct_additional_filter_string(out_filters)
+        additional_filter_string_in = self.__query_builder.construct_additional_filter_string(in_filters)
 
         if len(values_list) == 0:
             df_dict = {"entity":entities, "pCount":pCount, "iCount":iCount, "totalCount": totalCount}
@@ -422,68 +185,9 @@ class WealthKG:
                     if upper >= upperRange:
                         upper = upperRange-1
 
-                    query_out = self.__construct_batch_query_bag_outgoing(filter_string, values_list[lower:upper], additional_filter_string_out)
+                    query_out = self.__query_builder.construct_batch_query_outgoing(filter_string, values_list[lower:upper], additional_filter_string_out, distinct)
 
-                    query_in = self.__construct_batch_query_bag_incoming(filter_string, values_list[lower:upper], additional_filter_string_in)
-
-                    df = self.__construct_df_outgoing_incoming(query_out, query_in)
-
-                    entities += list(df['s'])
-                    pCount += list(df['pCount'])
-                    iCount += list(df['iCount'])
-                    totalCount += list(df['totalCount'])
-
-                except:
-                    time.sleep(2)
-                    continue
-                break 
-
-        df_dict = {"entity":entities, "pCount":pCount, "iCount":iCount, "totalCount":totalCount}
-        df = pd.DataFrame(df_dict)
-        df.drop_duplicates(keep='first', inplace=True)
-        return df.sort_values(by='totalCount', ascending=False).reset_index(drop=True)
-
-
-    def __construct_batch_set_df(self, filter_string, values_list, additional_filters):
-        '''
-        Helper function to create dataframe from sample query for distinct properties
-        Input:
-        -filter_sting: string, class filters for the query
-        -additional_filter_string: string, additional filters that may be needed
-        -values_list: list of entity values, used for querying multiple entities at once
-
-        Output:
-        -df: pandas dataframe, dataframe for query results
-        '''
-        
-        upperRange = len(values_list)
-        entities = []
-        pCount = []
-        iCount = []
-        totalCount = []
-        url = self.sparql_endpoint
-
-        out_filters = [x for x in additional_filters if "?p" in x] + [x for x in additional_filters if "?s" in x]
-        in_filters = [x for x in additional_filters if "?i" in x] + [x for x in additional_filters if "?s" in x]
-        additional_filter_string_out = self.__construct_additional_filter_string(out_filters)
-        additional_filter_string_in = self.__construct_additional_filter_string(in_filters)
-
-        if len(values_list) == 0:
-            df_dict = {"entity":entities, "pCount":pCount, "iCount":iCount, "totalCount": totalCount}
-            df = pd.DataFrame(df_dict)
-            return df
-
-        for i in tqdm(range(0,upperRange,10000)):
-            while True:
-                try:
-                    lower = i
-                    upper = i+10000
-                    if upper >= upperRange:
-                        upper = upperRange-1
-
-                    query_out = self.__construct_batch_query_set_outgoing(filter_string, values_list[lower:upper], additional_filter_string_out)
-
-                    query_in = self.__construct_batch_query_set_incoming(filter_string, values_list[lower:upper], additional_filter_string_in)
+                    query_in = self.__query_builder.construct_batch_query_incoming(filter_string, values_list[lower:upper], additional_filter_string_in, distinct)
 
                     df = self.__construct_df_outgoing_incoming(query_out, query_in)
 
@@ -502,26 +206,6 @@ class WealthKG:
         df.drop_duplicates(keep='first', inplace=True)
         return df.sort_values(by='totalCount', ascending=False).reset_index(drop=True)
   
-
-    def __construct_sample_entities_query(self, filter_string, additional_filter_string, limit):
-        '''
-        Helper function to create query for getting entities
-        Input:
-        -filter_sting: string, class filters for the query
-        -additional_filter_string: string, additional filters that may be needed
-        -limit: int, max amount of entities per class to query
-
-        Output:
-        -query: string, query string
-        '''
-        query = self.prefix_string + '''
-                SELECT ?s WHERE {         
-              ''' + filter_string + ''' ''' \
-                  +additional_filter_string+'''
-                } LIMIT '''+str(limit)+'''
-              '''
-
-        return query
 
     def __get_entities_list(self, query):
         '''
@@ -545,7 +229,7 @@ class WealthKG:
 
         return list(df['s'])
   
-    def multiclass_query(self, class_property, class_identifier, class_additional_filters, additional_filters, bag=True, limit=10000):
+    def multiclass_query(self, class_property, class_identifier, class_additional_filters, additional_filters, distinct=False, limit=10000):
         '''
         This function is for querying multiple class in a knowledge graph
         Input:
@@ -553,60 +237,25 @@ class WealthKG:
         -class_identifer: string, URI for class if "class" is defined in the knowledge graph ontology
         -class_additional_filters: string, filters for querying class list
         -additional_filters: string, additional filter for querying each class
-        -bag: boolean. True for bag queries, false for set queries. Default True.
+        -distinct: boolean. True for distinct queries, false for normal queries. Default False.
         -limit: int. Maximum ammount of entities to be queried. Default 10 thousand.
         
         Output:
         -WealthKGMultiClassObject: Object for the results of the query
         '''
-        class_add_string = self.__construct_additional_filter_string(class_additional_filters)
-        class_query = self.__construct_get_all_classes_query(class_property, class_identifier, class_add_string)
+        class_add_string = self.__query_builder.construct_additional_filter_string(class_additional_filters)
+        class_query = self.__query_builder.construct_get_all_classes_query(class_property, class_identifier, class_add_string)
 
         class_df = self.__construct_all_classes_df(class_query)
 
 
-        if bag:
-            result_dict = self.__get_all_bag_df(class_property=class_property, class_list = list(class_df["class"]), additional_filters=additional_filters, limit=limit)
-            return WealthKGMultiClassObject(class_df, result_dict)
-        else:
-            result_dict = self.__get_all_set_df(class_property=class_property, class_list = list(class_df["class"]), additional_filters=additional_filters, limit=limit)
-            return WealthKGMultiClassObject(class_df, result_dict)
-     
-  
-    def __construct_get_all_classes_query(self, class_property='wdt:P31', class_identifer = "", class_additional_filter_string=[]):
-        # 
-        #Input: arr_prefixes (Array of prefixes needed for the KG), is_instance_property (property that indicates a class),
-        #      min_count (to filter classes with a certain amount of entitites)
-        #Output: query string for class
-        '''
-        This is a helper function is for getting all classes with in a KG
-        Input:
-        -class_property: string, property for "is instance" or equivalent
-        -class_identifer: string, URI for class if "class" is defined in the knowledge graph ontology
-        -class_additional_filters: string, filters for querying class list
-            
-        Output:
-        -query: string, query string
-        '''
-
-
-        query = self.prefix_string + '''
-            SELECT distinct ?class 
-            WHERE {
-            ?entity '''+class_property+''' ?class .
-            '''+class_additional_filter_string+'''
-            }'''
-
-        if class_identifer != "":
-            query = self.prefix_string + '''
-                SELECT distinct ?class 
-                WHERE {
-                ?class '''+class_property+' '+class_identifer+'''  .
-                '''+class_additional_filter_string+'''
-                } '''
-
-        return query
-  
+        result_dict = self.__get_all_df(class_property=class_property, 
+                                        class_list = list(class_df["class"]), 
+                                        additional_filters=additional_filters, 
+                                        limit=limit, 
+                                        distinct=distinct)
+        
+        return WealthKGMultiClassObject(class_df, result_dict)
   
     def __construct_all_classes_df(self,  query):
         '''
@@ -627,7 +276,7 @@ class WealthKG:
         return df
 
 
-    def __get_all_bag_df(self, class_list, class_property, additional_filters, limit):
+    def __get_all_df(self, class_list, class_property, additional_filters, limit, distinct):
         '''
         This is a function to get entities of multiple classes from a KG
         Input:
@@ -636,6 +285,8 @@ class WealthKG:
         -class_property: string, property for "is instance" or equivalent
         -additional_filters: string, additional filter for querying each class
         -limit: int, max limit of entities
+        -distinct: boolean. True for distinct queries, false for normal queries. Default False.
+
         Output: 
         -dict: dictionary with class identifier as the key and pandas dataframe of class as value
         '''
@@ -644,16 +295,23 @@ class WealthKG:
 
         out_filters = [x for x in additional_filters if "?p" in x] + [x for x in additional_filters if "?s" in x]
         in_filters = [x for x in additional_filters if "?i" in x] + [x for x in additional_filters if "?s" in x]
-        additional_filter_string_out = self.__construct_additional_filter_string(out_filters)
-        additional_filter_string_in = self.__construct_additional_filter_string(in_filters)
+        additional_filter_string_out = self.__query_builder.construct_additional_filter_string(out_filters)
+        additional_filter_string_in = self.__query_builder.onstruct_additional_filter_string(in_filters)
 
         for class_uri in tqdm(class_list):
             while True:
                 try:
                     key = class_uri
                     filter_string = "?s {} <{}> .".format(class_property, class_uri)
-                    query_out = self.__construct_query_bag_outgoing(filter_string=filter_string, additional_filter_string=additional_filter_string_out, limit=limit)
-                    query_in = self.__construct_query_bag_incoming(filter_string=filter_string, additional_filter_string=additional_filter_string_in, limit=limit)
+                    query_out = self.__query_builder.construct_query_outgoing(filter_string=filter_string, 
+                                                                            additional_filter_string=additional_filter_string_out, 
+                                                                            limit=limit, 
+                                                                            distinct=distinct)
+                    
+                    query_in = self.__query_builder.construct_query_incoming(filter_string=filter_string, 
+                                                                           additional_filter_string=additional_filter_string_in, 
+                                                                           limit=limit,
+                                                                           distinct=distinct)
 
                     class_df = self.__construct_df_outgoing_incoming(query_out, query_in)
 
@@ -666,70 +324,6 @@ class WealthKG:
 
         return df_dict
 
-    def __get_all_set_df(self, class_list, class_property, additional_filters, limit):
-        '''
-        This is a function to get entities of multiple classes from a KG with distinct properties
-        Input:
-        -query:string, query string
-        -class_list: list, list of entities
-        -class_property: string, property for "is instance" or equivalent
-        -additional_filters: string, additional filter for querying each class
-        -limit: int, max limit of entities
-        Output: 
-        -dict: dictionary with class identifier as the key and pandas dataframe of class as value
-        '''
-
-        df_dict = {}
-
-        out_filters = [x for x in additional_filters if "?p" in x] + [x for x in additional_filters if "?s" in x]
-        in_filters = [x for x in additional_filters if "?i" in x] + [x for x in additional_filters if "?s" in x]
-        additional_filter_string_out = self.__construct_additional_filter_string(out_filters)
-        additional_filter_string_in = self.__construct_additional_filter_string(in_filters)
-
-        for class_uri in tqdm(class_list):
-            while True:
-                try:
-                    key = class_uri
-                    filter_string = "?s {} <{}> .".format(class_property, class_uri)
-                    query_out = self.__construct_query_set_outgoing(filter_string=filter_string, additional_filter_string=additional_filter_string_out, limit=limit)
-                    query_in = self.__construct_query_set_incoming(filter_string=filter_string, additional_filter_string=additional_filter_string_in, limit=limit)
-                    class_df = self.__construct_df_outgoing_incoming(query_out, query_in)
-
-                    df_dict[key] = class_df
-
-                except:
-                    time.sleep(0.1)
-                    continue
-                break
-
-        return df_dict
-
-    def __construct_prefix_string(self, prefixes):
-        #Helper function to create prefix string needed for queries
-
-        prefix_string = ""
-        for f in prefixes:
-            prefix_string += ("PREFIX {} \n".format(f))
-
-        return prefix_string
-
-    def __construct_filter_string(self, class_filters):
-        #Helper function to create class filter string needed for queries
-
-        filter_string = ""
-        for f in class_filters:
-            filter_string += ("?s {} . \n".format(f))
-
-        return filter_string
-
-    def __construct_additional_filter_string(self, additional_filters): 
-        #Helper function to create additional filters string needed for queries
-
-        additional_filter_string = ""
-        for f in additional_filters:
-            additional_filter_string += "{} \n".format(f)
-
-        return additional_filter_string
 
     def __getValue(self, x):
         #Helper function to getvalue from json

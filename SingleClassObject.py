@@ -4,9 +4,15 @@ import numpy as np
 import plotly.express as px
 import matplotlib.pyplot as plt
 import math
+import kaleido
 import plotly.graph_objects as go
 import time
+import glob
+import os
 from plotly.subplots import make_subplots
+from scipy.stats import ks_2samp, norm, wasserstein_distance
+from matplotlib.ticker import PercentFormatter
+from tqdm import tqdm
 
 class WealthKGSingleClassObject:
     '''
@@ -14,13 +20,13 @@ class WealthKGSingleClassObject:
 
     Attributes:
     - Dataframe: Pandas Dataframe. Dataframe of entities with incoming properties, outgoing properties, total properties.
-    - bag: Boolean. True if bag was used for queries, false if set was used for queries.
+    - distinct: Boolean. True if querying distinct properties.
     - class_filter: string. Represents the class of this analysis.
     - entity_count: int. Represents number of entities in analysis.
     '''
-    def __init__(self, dataframe, bag, class_filter, entity_count):
+    def __init__(self, dataframe, distinct, class_filter, entity_count):
         self.dataframe = dataframe
-        self.bag = bag
+        self.distinct = distinct
         self.class_filter = class_filter
         self.entity_count = entity_count
   
@@ -30,6 +36,8 @@ class WealthKGSingleClassObject:
         print("Q1 =", df[part].quantile(.25))
         print("Q2/median =", df[part].median())
         print("Q3 =", df[part].quantile(.75))
+        print("Min = ", df[part].min())
+        print("Max = ", df[part].max())
         print("mode =", df[part].mode()[0])
         print("mean =", df[part].mean())
         print("kurtosis =", df[part].kurtosis())

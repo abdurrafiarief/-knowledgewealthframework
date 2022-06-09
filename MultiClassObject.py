@@ -4,10 +4,17 @@ import numpy as np
 import plotly.express as px
 import matplotlib.pyplot as plt
 import math
+import kaleido
 import plotly.graph_objects as go
 import time
+import glob
+import os
 from plotly.subplots import make_subplots
 from scipy.stats import ks_2samp, norm, wasserstein_distance
+from matplotlib.ticker import PercentFormatter
+from tqdm import tqdm
+
+
 
 class WealthKGMultiClassObject:
     '''
@@ -309,7 +316,7 @@ class WealthKGMultiClassObject:
         return (1 - np.quantile(lorenz_arr, 0.9)) / np.quantile(lorenz_arr, 0.4)
 
 
-    def show_pareto_all(self, title_text, part, start, end):
+    def show_pareto_all(self, title_text, part):
         '''
         This function creates a subplot filled with each class's pareto chart
         Input:
@@ -319,7 +326,7 @@ class WealthKGMultiClassObject:
         output:
         -plotly figure for pareto chart
         '''
-        key_list = list(self.class_dict.keys())[start:end]
+        key_list = list(self.class_dict.keys())
         key_list.sort()
 
         rows = math.ceil(len(key_list)/5)
@@ -392,16 +399,16 @@ class WealthKGMultiClassObject:
         distance_matrix = []
 
         for key in tqdm(key_list):
-        row = []
-        for other_key in key_list:
-        if other_key == key:
-            row.append(0)
-        else:
-            u_values = list(class_dict[key][part])
-            v_values = list(class_dict[other_key][part])
-            emd = wasserstein_distance(u_values, v_values)
-            row.append(emd)
-        distance_matrix.append(row)
+            row = []
+            for other_key in key_list:
+                if other_key == key:
+                    row.append(0)
+                else:
+                    u_values = list(class_dict[key][part])
+                    v_values = list(class_dict[other_key][part])
+                    emd = wasserstein_distance(u_values, v_values)
+                    row.append(emd)
+            distance_matrix.append(row)
 
         return np.array(distance_matrix)
     
