@@ -43,7 +43,7 @@ cs_wealth = wealthKG.single_class_query(class_filters, add_filters, distinct, li
 # To access the dataframe, we can call the objects properties
 cs_wealth.dataframe
 ```
-![cs_wealth dataframe](https://raw.githubusercontent.com/abdurrafiarief/knowledgewealthframework/blob/dd63475a378aee3fe3c9cbf77e4ae68eea713454/images/Wikidata%20Computer%20Scientist%20Dataframe.png)
+![cs_wealth dataframe](https://github.com/abdurrafiarief/knowledgewealthframework/blob/37d015c6ec4670d4bec4da83f26e7a795a03f05c/images/Wikidata%20Computer%20Scientist%20Dataframe.png)
 
 ```python
 # We can use this function to create a histogram for a certain part or show the whole thing
