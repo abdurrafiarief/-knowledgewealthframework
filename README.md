@@ -43,7 +43,7 @@ cs_wealth = wealthKG.single_class_query(class_filters, add_filters, distinct, li
 # To access the dataframe, we can call the objects properties
 cs_wealth.dataframe
 ```
-![cs_wealth dataframe] (https://github.com/abdurrafiarief/knowledgewealthframework/blob/dd63475a378aee3fe3c9cbf77e4ae68eea713454/images/Wikidata%20Computer%20Scientist%20Dataframe.png)
+![cs_wealth dataframe] ([https://github.com/](https://raw.githubusercontent.com/abdurrafiarief/knowledgewealthframework/blob/dd63475a378aee3fe3c9cbf77e4ae68eea713454/images/Wikidata%20Computer%20Scientist%20Dataframe.png)
 
 ```python
 # We can use this function to create a histogram for a certain part or show the whole thing
@@ -135,7 +135,7 @@ human_subclasses.class_dict['Q7569']
 # this histogram is showing the distribution of entities based on the number of properties the entities posses
 human_subclasses.get_all_histogram(part='pCount', title_text="10 Subclasses of Human")
 ```
-![human_subclass histograms] (https://github.com/abdurrafiarief/knowledgewealthframework/blob/main/images/Wikidata%20Human%20Subclass%20Histogram.png)
+![human_subclasshistograms](https://github.com/abdurrafiarief/knowledgewealthframework/blob/21a6b910ebb4b8556237167e61d166833c2dcab3/images/Wikidata%20Human%20Subclass%20Histogram.png)
 
 ```python
 # We can also some analysis for the entities
