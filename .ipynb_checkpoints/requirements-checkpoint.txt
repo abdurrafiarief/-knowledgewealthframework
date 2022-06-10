@@ -1,9 +1,0 @@
-pandas
-tqdm
-validators
-glob
-numpy
-plotly
-kaleido
-scipy
-matplotlib
