@@ -43,6 +43,7 @@ cs_wealth = wealthKG.single_class_query(class_filters, add_filters, distinct, li
 # To access the dataframe, we can call the objects properties
 cs_wealth.dataframe
 ```
+![cs_wealth dataframe] (https://github.com/abdurrafiarief/knowledgewealthframework/blob/dd63475a378aee3fe3c9cbf77e4ae68eea713454/images/Wikidata%20Computer%20Scientist%20Dataframe.png)
 
 ```python
 # We can use this function to create a histogram for a certain part or show the whole thing
@@ -50,17 +51,19 @@ cs_wealth.dataframe
 # this histogram is showing the distribution of entities based on the number of properties the entities posses
 cs_wealth.get_histogram(part='all')
 ```
+![cs_wealth histogram for all types of properties](https://github.com/abdurrafiarief/knowledgewealthframework/blob/main/images/Wikidata%20Computer%20Scientist%20Histogram%20for%20Outgoing%20Properties.png)
 
 ```python
 # It is possible to to see a histogram of a certain part
 cs_wealth.get_histogram(part='pCount')
 ```
+![cs_wealth histogram for outgoing properties](https://github.com/abdurrafiarief/knowledgewealthframework/blob/main/images/Wikidata%20Computer%20Scientist%20Histogram%20for%20Outgoing%20Properties.png)
 
 ```python
 # This function can be used for geting a pareto chart for the class in a specified column
 cs_wealth.get_pareto_chart('pCount')
 ```
-
+![cs_wealth pareto chart](https://github.com/abdurrafiarief/knowledgewealthframework/blob/main/images/Wikidata%20Computer%20Scientist%20Pareto%20Chart.png)
 
 ```python
 # This function returns a statistical summary for a particular column
@@ -124,6 +127,7 @@ dict_keys(['Q7569', 'Q22947', 'Q26513', 'Q56054675', 'Q56054676', 'Q64520857', '
 ```python
 human_subclasses.class_dict['Q7569']
 ```
+![Q7569 Datafrane](https://github.com/abdurrafiarief/knowledgewealthframework/blob/main/images/Wikidata%20Human%20Subclass%20Dataframe%20Example.png)
 
 ```python
 # If want to see all histograms for the class than use this function
@@ -131,6 +135,7 @@ human_subclasses.class_dict['Q7569']
 # this histogram is showing the distribution of entities based on the number of properties the entities posses
 human_subclasses.get_all_histogram(part='pCount', title_text="10 Subclasses of Human")
 ```
+![human_subclass histograms] (https://github.com/abdurrafiarief/knowledgewealthframework/blob/main/images/Wikidata%20Human%20Subclass%20Histogram.png)
 
 ```python
 # We can also some analysis for the entities
@@ -144,7 +149,7 @@ Output:
 ```python
 human_subclasses.get_entity_count_histogram()
 ```
-
+![human_subclass entity count](https://github.com/abdurrafiarief/knowledgewealthframework/blob/main/images/Wikidata%20Human%20Subclass%20Entity%20Histogram.png)
 ```python
 # It is also possible to save the files into csv-s stored in a folder
 human_subclasses.save_to_csv_folder("human_subclasses")
@@ -162,4 +167,5 @@ Saved to human_subclasses
 human_subclasses = wealthKG.read_csv_folder(r"human_subclasses\")
 human_subclasses.class_list
 ```
+![human_subclass class_list](https://github.com/abdurrafiarief/knowledgewealthframework/blob/main/images/Wikidata%20Human%20Subclass%20Class%20List.png)
 
